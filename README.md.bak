@@ -1,0 +1,222 @@
+# AI Agent 基准项目
+
+## 多 Agent 协同代码审查和重构系统
+
+这是一个用于评估 AI 代码审查能力的多 Agent 协同系统，包含代码审查、重构建议、安全扫描和性能分析等功能。
+
+## 项目结构
+
+```
+ai-agent-benchmark/
+├── README.md                    # 项目说明文档
+├── requirements.txt             # Python 依赖
+├── setup.py                     # 项目安装脚本
+├── config/
+│   ├── __init__.py
+│   ├── settings.py             # 配置文件
+│   └── logging_config.py       # 日志配置
+├── agents/
+│   ├── __init__.py
+│   ├── base_agent.py           # Agent 基类
+│   ├── reviewer_agent.py       # 审查者 Agent
+│   ├── developer_agent.py      # 开发者 Agent
+│   ├── critic_agent.py         # 批评者 Agent
+│   └── coordinator.py          # Agent 协调器
+├── core/
+│   ├── __init__.py
+│   ├── code_analyzer.py        # 代码分析引擎
+│   ├── refactoring_engine.py   # 重构引擎
+│   ├── security_scanner.py     # 安全扫描器
+│   └── performance_analyzer.py # 性能分析器
+├── benchmark/
+│   ├── __init__.py
+│   ├── evaluator.py            # 评估器
+│   ├── metrics.py              # 指标计算
+│   └── test_cases/             # 基准测试用例
+│       ├── __init__.py
+│       ├── java_tests.py       # Java 测试用例
+│       └── python_tests.py     # Python 测试用例
+├── monitoring/
+│   ├── __init__.py
+│   ├── token_monitor.py        # Token 监控
+│   └── performance_monitor.py  # 性能监控
+├── utils/
+│   ├── __init__.py
+│   ├── git_utils.py            # Git 工具
+│   ├── file_utils.py           # 文件工具
+│   └── llm_utils.py            # LLM 工具
+├── examples/
+│   ├── basic_usage.py          # 基础使用示例
+│   └── advanced_usage.py       # 高级使用示例
+└── tests/
+    ├── __init__.py
+    ├── test_agents.py          # Agent 测试
+    ├── test_core.py            # 核心模块测试
+    └── test_benchmark.py       # 基准测试
+```
+
+## 功能特性
+
+### 1. 多 Agent 协同系统
+- **审查者 Agent (Reviewer Agent)**: 负责代码质量审查
+- **开发者 Agent (Developer Agent)**: 负责代码重构和优化
+- **批评者 Agent (Critic Agent)**: 负责提出改进建议和问题
+- **协调器 (Coordinator)**: 管理 Agent 间的通信和任务分配
+
+### 2. 代码分析引擎
+- AST 解析和代码结构分析
+- 代码质量检测（复杂度、重复度、规范性）
+- 安全漏洞扫描
+- 性能瓶颈识别
+
+### 3. 重构引擎
+- 自动代码重构建议
+- 重构影响分析
+- 重构效果评估
+
+### 4. 评估系统
+- 代码审查准确性评估
+- 重构质量评估
+- 基准测试用例管理
+- 性能指标计算
+
+### 5. 监控系统
+- Token 使用跟踪和成本计算
+- Agent 性能监控
+- 系统资源使用监控
+
+## 安装
+
+### 环境要求
+- Python 3.8+
+- Git
+
+### 安装步骤
+
+```bash
+# 克隆项目
+git clone <repository-url>
+cd ai-agent-benchmark
+
+# 创建虚拟环境
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# 或
+venv\Scripts\activate  # Windows
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 安装项目
+pip install -e .
+```
+
+## 使用方法
+
+### 基础使用
+
+```python
+from agents.coordinator import AgentCoordinator
+from benchmark.evaluator import BenchmarkEvaluator
+
+# 创建协调器
+coordinator = AgentCoordinator()
+
+# 运行代码审查
+result = coordinator.review_code("path/to/code.py")
+
+# 评估结果
+evaluator = BenchmarkEvaluator()
+score = evaluator.evaluate(result)
+print(f"审查评分: {score}")
+```
+
+### 高级使用
+
+```python
+from agents.coordinator import AgentCoordinator
+from core.refactoring_engine import RefactoringEngine
+from monitoring.token_monitor import TokenMonitor
+
+# 创建协调器
+coordinator = AgentCoordinator()
+
+# 运行多轮审查和重构
+code = "path/to/code.py"
+review_result = coordinator.review_code(code)
+
+# 如果需要重构
+if review_result.needs_refactoring:
+    refactoring_engine = RefactoringEngine()
+    refactored_code = refactoring_engine.refactor(code, review_result.suggestions)
+    
+    # 再次审查重构后的代码
+    final_review = coordinator.review_code(refactored_code)
+
+# 监控 Token 使用
+token_monitor = TokenMonitor()
+usage = token_monitor.get_usage()
+print(f"Token 使用量: {usage}")
+```
+
+## 测试
+
+```bash
+# 运行所有测试
+pytest tests/
+
+# 运行特定测试
+pytest tests/test_agents.py
+pytest tests/test_core.py
+pytest tests/test_benchmark.py
+
+# 运行基准测试
+python -m benchmark.run
+```
+
+## 配置
+
+配置文件位于 `config/settings.py`，可以调整以下参数：
+
+- Agent 配置（模型、参数等）
+- 代码分析规则
+- 评估指标权重
+- 监控设置
+
+## 开发
+
+### 添加新的 Agent
+
+1. 继承 `BaseAgent` 类
+2. 实现必要的方法
+3. 在 `AgentCoordinator` 中注册
+
+```python
+from agents.base_agent import BaseAgent
+
+class CustomAgent(BaseAgent):
+    def __init__(self, name: str):
+        super().__init__(name)
+    
+    def analyze(self, code: str) -> dict:
+        # 实现分析逻辑
+        pass
+```
+
+### 添加新的分析器
+
+1. 继承相应的基类
+2. 实现分析方法
+3. 在配置中启用
+
+## 贡献
+
+欢迎贡献代码、报告问题或提出建议。
+
+## 许可证
+
+MIT License
+
+## 联系方式
+
+如有问题，请提交 Issue 或联系项目维护者。
