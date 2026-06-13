@@ -758,6 +758,9 @@ class CodeAnalyzer:
                 message="使用通配符导入",
                 suggestion="明确导入需要的名称",
             ))
+
+        # --- Graph Algorithm / NetworkX Detection Rules ---
+        issues.extend(self._check_graph_algorithm_issues(code, tree))
         
         # Check for mutable default arguments
         if re.search(r"def\s+\w+\s*\(.*=\s*(\[\]|\{\})\s*\)", code):
@@ -783,7 +786,138 @@ class CodeAnalyzer:
                 ))
         
         return issues
-    
+
+    # ------------------------------------------------------------------
+    # Graph Algorithm / NetworkX Detection
+    # ------------------------------------------------------------------
+    GRAPH_CYCLE_PATTERNS = [
+        (r"\bBFS\b|\bbfs(?:\s*\(|_)", "BFS", "广度优先搜索 (BFS) 可能存在性能瓶颈，考虑双向BFS或A*"),
+        (r"\bBFS\b.*queue", "BFS_QUEUE", "BFS 队列实现确认"),
+        (r"\bDFS\b|\bdfs(?:\s*\(|_)", "DFS", "深度优先搜索 (DFS) 在大型图中可能导致栈溢出"),
+        (r"\bdfs\b\(", "DFS_CALL", "检测到 DFS 调用"),
+        (r"\bbfs\b\(", "BFS_CALL", "检测到 BFS 调用"),
+        (r"\bdijkstra\b", "DIJKSTRA", "Dijkstra 算法不适用于含负权边的图"),
+        (r"\bbellman.?ford\b", "BELLMAN_FORD", "Bellman-Ford 算法时间复杂度较高 O(VE)"),
+        (r"\bfloyd.?warshall\b", "FLOYD_WARSHALL", "Floyd-Warshall 空间复杂度 O(V^2)，大图慎用"),
+        (r"\btopological.?sort\b", "TOPO_SORT", "拓扑排序 — 仅适用于有向无环图 (DAG)"),
+        (r"\bkruskal\b", "KRUSKAL", "Kruskal 算法 — 适用于稀疏图的最小生成树"),
+        (r"\bprim\b\(", "PRIM", "Prim 算法 — 适用于稠密图的最小生成树"),
+        (r"\ba_star\b|\bastar\b", "A_STAR", "A* 算法 — 需要可接受的启发函数"),
+        (r"\bbellman\b", "BELLMAN", "检测到 Bellman 相关算法"),
+    ]
+
+    GRAPH_NETWORKX_PATTERNS = [
+        (r"from\s+networkx\s+import|import\s+networkx", "NETWORKX_IMPORT", "检测到 NetworkX 导入"),
+        (r"\bnx\.Graph\b", "NX_GRAPH", "使用无向图模型"),
+        (r"\bnx\.DiGraph\b", "NX_DIGRAPH", "使用有向图模型"),
+        (r"\bnx\.MultiGraph\b", "NX_MULTI", "使用多重图模型（可能存在平行边）"),
+        (r"\bnx\.MultiDiGraph\b", "NX_MULTI_DIGRAPH", "使用多重有向图模型"),
+        (r"\bnx\.add_edge\b", "NX_ADD_EDGE", "添加边操作"),
+        (r"\bnx\.add_node\b", "NX_ADD_NODE", "添加节点操作"),
+        (r"\bnx\.shortest_path\b", "NX_SHORTEST_PATH", "最短路径查询 — 大图考虑预计算"),
+        (r"\bnx\.all_shortest_paths\b", "NX_ALL_SHORTEST", "全最短路径查询 — 计算密集"),
+        (r"\bnx\.connected_components\b", "NX_CONNECTED", "连通分量检测"),
+        (r"\bnx\.bfs_edges\b|\bnx\.bfs_tree\b", "NX_BFS", "NetworkX BFS 操作"),
+        (r"\bnx\.dfs_edges\b|\bnx\.dfs_tree\b", "NX_DFS", "NetworkX DFS 操作"),
+        (r"\bnx\.dijkstra_path\b", "NX_DIJKSTRA", "NetworkX Dijkstra 最短路径"),
+        (r"\bnx\.pagerank\b", "NX_PAGERANK", "PageRank 算法 — 迭代计算，大图耗时"),
+        (r"\bnx\.clustering\b", "NX_CLUSTERING", "聚类系数计算"),
+        (r"\bnx\.betweenness_centrality\b", "NX_BETWEENNESS", "介数中心性 — O(VE) 时间复杂度"),
+        (r"\bnx\.closeness_centrality\b", "NX_CLOSENESS", "接近中心性计算"),
+        (r"\bnx\.degree_centrality\b", "NX_DEGREE_CENT", "度中心性计算"),
+        (r"\bnx\.is_connected\b", "NX_IS_CONNECTED", "连通性检测"),
+        (r"\bnx\.is_eulerian\b", "NX_EULERIAN", "欧拉图检测"),
+        (r"\bnx\.minimum_spanning_tree\b", "NX_MST", "最小生成树计算"),
+        (r"\bnx\.topological_sort\b", "NX_TOPO_SORT", "拓扑排序操作"),
+    ]
+
+    GRAPH_MODEL_PATTERNS = [
+        (r"class\s+\w*graph\w*", "GRAPH_CLASS", "检测到图模型类定义"),
+        (r"class\s+\w*node\w*", "NODE_CLASS", "检测到节点模型类定义"),
+        (r"class\s+\w*edge\w*", "EDGE_CLASS", "检测到边模型类定义"),
+        (r"adjacency.?matrix|邻接矩阵", "ADJ_MATRIX", "使用邻接矩阵表示图"),
+        (r"adjacency.?list|邻接表", "ADJ_LIST", "使用邻接表表示图"),
+        (r"\bself\.adj\b|\bself\.adjacency\b", "SELF_ADJ", "检测到邻接存储结构"),
+        (r"def\s+(?:add_edge|add_vertex|add_node|add_neighbors)", "GRAPH_MUTATION", "图结构变更操作"),
+        (r"def\s+(?:neighbors|adjacent|successors|predecessors)", "GRAPH_QUERY", "图结构查询操作"),
+    ]
+
+    def _check_graph_algorithm_issues(
+        self,
+        code: str,
+        tree: Optional[ast.AST] = None,
+    ) -> List[CodeIssue]:
+        """Check for graph algorithm and NetworkX related code issues."""
+        issues: List[CodeIssue] = []
+        seen_ids: Set[str] = set()
+
+        all_patterns = (
+            self.GRAPH_CYCLE_PATTERNS
+            + self.GRAPH_NETWORKX_PATTERNS
+            + self.GRAPH_MODEL_PATTERNS
+        )
+
+        for pattern, rule_id, message in all_patterns:
+            if rule_id in seen_ids:
+                continue
+            matches = re.findall(pattern, code, re.IGNORECASE)
+            if matches:
+                seen_ids.add(rule_id)
+                severity = "info"
+                suggestion = ""
+                category = "graph_algorithm"
+
+                # Determine severity and suggestion
+                if rule_id in ("NETWORKX_IMPORT",):
+                    severity = "info"
+                    suggestion = "确保 NetworkX 已在 requirements.txt 中声明"
+                    category = "dependency"
+                elif rule_id in ("NX_MULTI", "NX_MULTI_DIGRAPH"):
+                    severity = "warning"
+                    suggestion = "多重图操作开销较大，确认是否需要平行边"
+                elif rule_id in ("BELLMAN_FORD", "FLOYD_WARSHALL"):
+                    severity = "warning"
+                    suggestion = "大图下时间复杂度较高，考虑替代算法"
+                elif rule_id in ("DFS", "DFS_CALL"):
+                    severity = "info"
+                    suggestion = "深图中 DFS 可能栈溢出，考虑迭代实现或 BFS"
+                elif rule_id in ("BFS", "BFS_CALL"):
+                    severity = "info"
+                    suggestion = "BFS 内存消耗与图宽度成正比"
+                elif rule_id in ("NX_PAGERANK", "NX_BETWEENNESS"):
+                    severity = "warning"
+                    suggestion = "大规模图上计算开销较大，考虑采样或近似算法"
+                elif rule_id in ("TOPO_SORT", "NX_TOPO_SORT"):
+                    severity = "info"
+                    suggestion = "拓扑排序仅适用于有向无环图 (DAG)，使用前请验证无环"
+                elif rule_id in ("GRAPH_MUTATION",):
+                    severity = "info"
+                    suggestion = "频繁变更图结构可能导致性能下降，考虑批量操作"
+                elif rule_id in ("ADJ_MATRIX",):
+                    severity = "warning"
+                    suggestion = "邻接矩阵空间复杂度 O(V^2)，稀疏图建议使用邻接表"
+                elif rule_id in ("GRAPH_QUERY",):
+                    severity = "info"
+
+                # Find line number
+                line_number: Optional[int] = None
+                lines = code.split("\n")
+                for i, line in enumerate(lines, 1):
+                    if re.search(pattern, line, re.IGNORECASE):
+                        line_number = i
+                        break
+
+                issues.append(CodeIssue(
+                    id=f"graph_{rule_id}",
+                    severity=severity,
+                    category=category,
+                    message=message,
+                    line_number=line_number,
+                    suggestion=suggestion,
+                ))
+
+        return issues
+
     def _check_java_issues(self, code: str) -> List[CodeIssue]:
         """Check for issues in Java code with enhanced detection."""
         issues = []
@@ -932,9 +1066,82 @@ class CodeAnalyzer:
                     message="可能存在资源泄漏",
                     suggestion="使用 try-with-resources 语句自动关闭资源",
                 ))
-        
+
+        # --- Graph Algorithm Detection for Java ---
+        issues.extend(self._check_graph_algorithm_java(code))
+
         return issues
-    
+
+    # ------------------------------------------------------------------
+    # Java Graph Algorithm Detection
+    # ------------------------------------------------------------------
+    JAVA_GRAPH_PATTERNS = [
+        (r"\bBFS\b|\bbreadth.?first\b|\bbfs\b", "JAVA_BFS", "BFS \u5e7f\u5ea6\u4f18\u5148\u641c\u7d22 \u2014 \u5927\u56fe\u9700\u6ce8\u610f\u5185\u5b58\u6d88\u8017"),
+        (r"\bDFS\b|\bdepth.?first\b|\bdfs\b", "JAVA_DFS", "DFS \u6df1\u5ea6\u4f18\u5148\u641c\u7d22 \u2014 \u9012\u5f52\u5b9e\u73b0\u53ef\u80fd\u6808\u6ea2\u51fa"),
+        (r"\bDijkstra\b|\bdijkstra\b", "JAVA_DIJKSTRA", "Dijkstra 算法 — 不适用于负权边"),
+        (r"\bBellman.?Ford\b", "JAVA_BELLMAN_FORD", "Bellman-Ford 算法 — 时间复杂度 O(VE)"),
+        (r"\bFloyd.?Warshall\b", "JAVA_FLOYD", "Floyd-Warshall — 空间复杂度 O(V^2)"),
+        (r"\bKruskal\b|\bkruskal\b", "JAVA_KRUSKAL", "Kruskal 算法 — 适用于稀疏图 MST"),
+        (r"\bPrim\b\(", "JAVA_PRIM", "Prim 算法 — 适用于稠密图 MST"),
+        (r"\btopological(?:Sort|Order)\b", "JAVA_TOPO_SORT", "拓扑排序 — 仅适用于 DAG"),
+        (r"\bPriorityQueue.*[Gg]raph\b|\bQueue.*Node\b", "JAVA_GRAPH_QUEUE", "图搜索队列结构"),
+        (r"Map\s*<\s*\w+\s*,\s*(?:List|Set|Map)\s*<.*>>\s+\w+\s*(?:=|;)", "JAVA_ADJ_LIST", "检测到邻接表数据结构"),
+        (r"\bint\s*\[\s*\]\s*\[\s*\]", "JAVA_ADJ_MATRIX", "检测到邻接矩阵数据结构"),
+        (r"import\s+org\.jgrapth", "JAVA_JGRAPTH", "检测到 JGraphT 图库导入"),
+        (r"class\s+\w+.*implements.*Graph\b", "JAVA_GRAPH_CLASS", "检测到图接口实现"),
+    ]
+
+    def _check_graph_algorithm_java(self, code: str) -> List[CodeIssue]:
+        """Check for graph algorithm patterns in Java code."""
+        issues: List[CodeIssue] = []
+        seen_ids: Set[str] = set()
+
+        for pattern, rule_id, message in self.JAVA_GRAPH_PATTERNS:
+            if rule_id in seen_ids:
+                continue
+            matches = re.findall(pattern, code)
+            if matches:
+                seen_ids.add(rule_id)
+                severity = "info"
+                suggestion = ""
+                category = "graph_algorithm"
+
+                if "BFS" in rule_id or "DFS" in rule_id:
+                    suggestion = "大型图中搜索算法可能性能不足，考虑 A* 或双向搜索"
+                elif "DIJKSTRA" in rule_id:
+                    suggestion = "Dijkstra 不适用于负权边，考虑 Bellman-Ford"
+                elif "BELLMAN_FORD" in rule_id:
+                    suggestion = "时间复杂度 O(VE)，大图考虑 SPFA 或 Dijkstra+堆"
+                elif "FLOYD" in rule_id:
+                    severity = "warning"
+                    suggestion = "空间 O(V^2)，大规模图请使用稀疏图算法"
+                elif "KRUSKAL" in rule_id or "PRIM" in rule_id:
+                    suggestion = "最小生成树算法选择取决于图的稀疏/稠密程度"
+                elif "TOPO" in rule_id:
+                    suggestion = "拓扑排序前请验证图中无环"
+                elif "JGRAPTH" in rule_id:
+                    suggestion = "JGraphT 已在使用中，注意 API 版本兼容性"
+                elif "ADJ_MATRIX" in rule_id:
+                    severity = "warning"
+                    suggestion = "邻接矩阵空间 O(V^2)，稀疏图建议使用邻接表"
+
+                line_number: Optional[int] = None
+                for i, line in enumerate(code.split("\n"), 1):
+                    if re.search(pattern, line):
+                        line_number = i
+                        break
+
+                issues.append(CodeIssue(
+                    id=f"graph_{rule_id}",
+                    severity=severity,
+                    category=category,
+                    message=message,
+                    line_number=line_number,
+                    suggestion=suggestion,
+                ))
+
+        return issues
+
     def _check_javascript_issues(self, code: str) -> List[CodeIssue]:
         """Check for issues in JavaScript code."""
         issues = []

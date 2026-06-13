@@ -48,10 +48,15 @@ ai-agent-benchmark/
 ├── examples/
 │   ├── basic_usage.py          # 基础使用示例
 │   └── advanced_usage.py       # 高级使用示例
+├── demo.py                     # 基础演示脚本
+├── demo_cinema.py              # 影院系统演示脚本
+├── demo_codegraph.py           # CodeGraph 图算法分析演示
 └── tests/
     ├── __init__.py
     ├── test_agents.py          # Agent 测试
     ├── test_core.py            # 核心模块测试
+    ├── test_cinema.py          # 影院系统测试
+    ├── test_codegraph.py       # CodeGraph 图算法分析测试
     └── test_benchmark.py       # 基准测试
 ```
 
@@ -84,6 +89,13 @@ ai-agent-benchmark/
 - Token 使用跟踪和成本计算
 - Agent 性能监控
 - 系统资源使用监控
+
+### 6. CodeGraph 图算法分析
+- 图算法模式检测（BFS、DFS、Dijkstra、拓扑排序、Floyd-Warshall 等）
+- NetworkX 代码检测与最佳实践提示
+- 图模型结构识别（邻接矩阵、邻接表、图类定义）
+- Java 图算法检测（JGraphT、邻接表、BFS/DFS 等）
+- 图代码复杂度与性能风险评估
 
 ## 安装
 
@@ -501,6 +513,44 @@ for vuln in result.vulnerabilities[:3]:
     print(f"  - [{vuln.severity.value}] {vuln.title}")
 ```
 
+### CodeGraph 图算法分析示例
+
+```python
+from core.code_analyzer import CodeAnalyzer
+
+analyzer = CodeAnalyzer()
+
+# 分析包含图算法的代码
+code = """
+import networkx as nx
+
+def analyze_dependency_graph():
+    G = nx.DiGraph()
+    G.add_edge("module_a", "module_b")
+    G.add_edge("module_b", "module_c")
+
+    # PageRank 分析
+    pr = nx.pagerank(G)
+
+    # 最短路径
+    path = nx.shortest_path(G, "module_a", "module_c")
+
+    return pr, path
+"""
+
+result = await analyzer.analyze(code, "python")
+
+# 查看图算法检测结果
+graph_issues = [i for i in result.issues if i.category == "graph_algorithm"]
+for issue in graph_issues:
+    print(f"  [{issue.severity}] {issue.message}")
+    if issue.suggestion:
+        print(f"    建议: {issue.suggestion}")
+
+# 运行完整演示
+# python demo_codegraph.py
+```
+
 ### 监控示例
 
 ```python
@@ -542,6 +592,8 @@ pytest tests/
 # 运行特定测试
 pytest tests/test_agents.py
 pytest tests/test_core.py
+pytest tests/test_cinema.py
+pytest tests/test_codegraph.py    # CodeGraph 图算法分析测试
 pytest tests/test_benchmark.py
 
 # 运行基准测试
