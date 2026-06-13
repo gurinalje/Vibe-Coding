@@ -291,39 +291,48 @@ class PerformanceAnalyzer:
         code: str,
         file_path: Optional[str]
     ) -> List[PerformanceIssue]:
-        """Check for nested loops."""
+        """Check for nested loops with improved detection."""
         issues = []
         
         lines = code.split('\n')
-        loop_depth = 0
-        loop_start_line = 0
+        loop_stack = []  # Stack to track nested loops
         
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             
             # Detect loop start
-            if re.match(r'\s*(for|while)\s+', stripped):
-                if loop_depth == 0:
-                    loop_start_line = i
-                loop_depth += 1
+            if re.match(r'(for|while)\s+', stripped):
+                loop_stack.append(i)
                 
                 # Check for deep nesting
-                if loop_depth >= 3:
+                if len(loop_stack) >= 3:
                     issues.append(PerformanceIssue(
                         id=f"nested_loop_{i}",
                         type=PerformanceIssueType.ALGORITHMIC,
                         severity=PerformanceSeverity.HIGH,
                         title="深层嵌套循环",
-                        description=f"循环嵌套深度为 {loop_depth} 层",
+                        description=f"循环嵌套深度为 {len(loop_stack)} 层",
                         file_path=file_path,
                         line_number=i,
-                        impact="O(n^{}) 时间复杂度".format(loop_depth),
+                        impact="O(n^{}) 时间复杂度".format(len(loop_stack)),
                         recommendation="考虑使用哈希表或提前终止来优化",
                     ))
             
-            # Detect loop end (simplified)
-            elif stripped.startswith('break') or (stripped == '' and loop_depth > 0):
-                loop_depth = max(0, loop_depth - 1)
+            # Detect loop end by tracking indentation
+            elif stripped and not stripped.startswith('#'):
+                # Calculate current indentation
+                current_indent = len(line) - len(line.lstrip())
+                
+                # Pop loops that have ended (indentation decreased)
+                while loop_stack:
+                    # Get indentation of the loop start line
+                    loop_line = lines[loop_stack[-1] - 1]
+                    loop_indent = len(loop_line) - len(loop_line.lstrip())
+                    
+                    if current_indent <= loop_indent:
+                        loop_stack.pop()
+                    else:
+                        break
         
         return issues
     
@@ -338,25 +347,44 @@ class PerformanceAnalyzer:
         # Check for string concatenation in loop
         lines = code.split('\n')
         in_loop = False
+        loop_indent = 0
         
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             
-            if re.match(r'\s*(for|while)\s+', stripped):
+            # Detect loop start
+            if re.match(r'(for|while)\s+', stripped):
                 in_loop = True
-            elif in_loop and '+=' in stripped and ('"' in stripped or "'" in stripped):
-                issues.append(PerformanceIssue(
-                    id=f"string_concat_loop_{i}",
-                    type=PerformanceIssueType.ALGORITHMIC,
-                    severity=PerformanceSeverity.MEDIUM,
-                    title="循环中字符串拼接",
-                    description="在循环中使用 += 拼接字符串效率低下",
-                    file_path=file_path,
-                    line_number=i,
-                    impact="每次拼接都会创建新字符串对象",
-                    recommendation="使用 join() 或 io.StringIO",
-                ))
-                in_loop = False
+                loop_indent = len(line) - len(line.lstrip())
+            
+            # Check if we're still in the loop based on indentation
+            elif in_loop and stripped:
+                current_indent = len(line) - len(line.lstrip())
+                if current_indent <= loop_indent:
+                    in_loop = False
+            
+            # Detect string concatenation in loop
+            if in_loop and '+=' in stripped:
+                # Check if it's string-related (has quotes, str(), or string variable)
+                is_string_concat = (
+                    '"' in stripped or "'" in stripped or
+                    'str(' in stripped or 'String' in stripped or
+                    re.search(r'\w+\s*\+=\s*[\'"]', stripped) or
+                    re.search(r'\w+\s*\+=\s*str\(', stripped)
+                )
+                if is_string_concat:
+                    issues.append(PerformanceIssue(
+                        id=f"string_concat_loop_{i}",
+                        type=PerformanceIssueType.ALGORITHMIC,
+                        severity=PerformanceSeverity.MEDIUM,
+                        title="循环中字符串拼接",
+                        description="在循环中使用 += 拼接字符串效率低下",
+                        file_path=file_path,
+                        line_number=i,
+                        impact="每次拼接都会创建新字符串对象",
+                        recommendation="使用 join() 或 io.StringIO",
+                    ))
+                    in_loop = False
         
         # Check for list membership test in loop
         for i, line in enumerate(lines, 1):

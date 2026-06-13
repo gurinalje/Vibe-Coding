@@ -244,7 +244,7 @@ class RefactoringEngine:
         code: str,
         file_path: Optional[str]
     ) -> List[RefactoringOperation]:
-        """Analyze Java code for refactoring."""
+        """Analyze Java code for refactoring with enhanced detection."""
         operations = []
         
         # Check for long methods
@@ -255,6 +255,21 @@ class RefactoringEngine:
         
         # Check for complex conditionals
         operations.extend(self._check_complex_conditionals_java(code, file_path))
+        
+        # Check for large classes
+        operations.extend(self._check_large_class_java(code, file_path))
+        
+        # Check for exception handling issues
+        operations.extend(self._check_exception_handling_java(code, file_path))
+        
+        # Check for method extraction opportunities
+        operations.extend(self._check_extract_method_java(code, file_path))
+        
+        # Check for field injection
+        operations.extend(self._check_field_injection_java(code, file_path))
+        
+        # Check for god class (too many responsibilities)
+        operations.extend(self._check_god_class_java(code, file_path))
         
         return operations
     
@@ -488,6 +503,281 @@ class RefactoringEngine:
                     description="条件表达式过于复杂",
                     file_path=file_path,
                     impact="low",
+                    confidence=0.6,
+                ))
+        
+        return operations
+    
+    def _check_large_class_java(
+        self,
+        code: str,
+        file_path: Optional[str]
+    ) -> List[RefactoringOperation]:
+        """Check for large classes that should be split."""
+        operations = []
+        
+        # Find class boundaries
+        class_pattern = r"(?:public|private|protected)?\s*(?:abstract|final)?\s*class\s+(\w+)"
+        
+        for match in re.finditer(class_pattern, code):
+            class_name = match.group(1)
+            start_pos = match.start()
+            
+            # Find class end by tracking braces
+            brace_count = 0
+            class_end = start_pos
+            started = False
+            for i, char in enumerate(code[start_pos:], start_pos):
+                if char == '{':
+                    brace_count += 1
+                    started = True
+                elif char == '}':
+                    brace_count -= 1
+                    if started and brace_count == 0:
+                        class_end = i
+                        break
+            
+            class_code = code[start_pos:class_end]
+            class_length = class_code.count('\n') + 1
+            
+            # Count methods in class
+            method_count = len(re.findall(r"(?:public|private|protected)\s+(?:static\s+)?\w+\s+\w+\s*\(", class_code))
+            
+            # Check if class is too large
+            if class_length > 300:
+                operations.append(RefactoringOperation(
+                    id=f"split_class_{class_name}",
+                    type=RefactoringType.EXTRACT_CLASS,
+                    description=f"类 '{class_name}' 过大 ({class_length} 行, {method_count} 个方法)，考虑拆分为多个职责单一的类",
+                    file_path=file_path,
+                    line_start=code[:start_pos].count('\n') + 1,
+                    impact="high",
+                    confidence=0.75,
+                ))
+            
+            # Check for too many methods (God Class)
+            if method_count > 15:
+                operations.append(RefactoringOperation(
+                    id=f"god_class_{class_name}",
+                    type=RefactoringType.EXTRACT_CLASS,
+                    description=f"类 '{class_name}' 方法过多 ({method_count} 个)，违反单一职责原则",
+                    file_path=file_path,
+                    line_start=code[:start_pos].count('\n') + 1,
+                    impact="high",
+                    confidence=0.7,
+                ))
+        
+        return operations
+    
+    def _check_exception_handling_java(
+        self,
+        code: str,
+        file_path: Optional[str]
+    ) -> List[RefactoringOperation]:
+        """Check for exception handling issues in Java."""
+        operations = []
+        
+        # Check for empty catch blocks
+        empty_catch_pattern = r"catch\s*\([^)]+\)\s*\{\s*\}"
+        for match in re.finditer(empty_catch_pattern, code, re.DOTALL):
+            line_num = code[:match.start()].count('\n') + 1
+            operations.append(RefactoringOperation(
+                id=f"empty_catch_{line_num}",
+                type=RefactoringType.SIMPLIFY,
+                description=f"第 {line_num} 行存在空的 catch 块，异常被静默吞没",
+                file_path=file_path,
+                line_start=line_num,
+                impact="high",
+                confidence=0.9,
+            ))
+        
+        # Check for generic Exception catch
+        generic_catch_pattern = r"catch\s*\(\s*Exception\s+\w+\s*\)"
+        for match in re.finditer(generic_catch_pattern, code):
+            line_num = code[:match.start()].count('\n') + 1
+            operations.append(RefactoringOperation(
+                id=f"generic_catch_{line_num}",
+                type=RefactoringType.SIMPLIFY,
+                description=f"第 {line_num} 行捕获通用 Exception，应捕获具体异常类型",
+                file_path=file_path,
+                line_start=line_num,
+                impact="medium",
+                confidence=0.8,
+            ))
+        
+        # Check for catch and rethrow (pointless)
+        pointless_catch_pattern = r"catch\s*\([^)]+\)\s*\{[^}]*throw\s+\w+;"
+        for match in re.finditer(pointless_catch_pattern, code, re.DOTALL):
+            line_num = code[:match.start()].count('\n') + 1
+            operations.append(RefactoringOperation(
+                id=f"pointless_catch_{line_num}",
+                type=RefactoringType.SIMPLIFY,
+                description=f"第 {line_num} 行 catch 后直接重新抛出，考虑使用 try-with-resources 或移除 catch",
+                file_path=file_path,
+                line_start=line_num,
+                impact="low",
+                confidence=0.6,
+            ))
+        
+        # Check for printStackTrace
+        if re.search(r"\.printStackTrace\s*\(", code):
+            operations.append(RefactoringOperation(
+                id="print_stack_trace",
+                type=RefactoringType.MODERNIZE,
+                description="使用 e.printStackTrace()，应使用日志框架记录异常",
+                file_path=file_path,
+                impact="medium",
+                confidence=0.85,
+            ))
+        
+        return operations
+    
+    def _check_extract_method_java(
+        self,
+        code: str,
+        file_path: Optional[str]
+    ) -> List[RefactoringOperation]:
+        """Check for method extraction opportunities in Java."""
+        operations = []
+        
+        # Find methods with complex logic
+        method_pattern = r"(?:public|private|protected)\s+(?:static\s+)?\w+\s+(\w+)\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{"
+        
+        for match in re.finditer(method_pattern, code):
+            method_name = match.group(1)
+            start_pos = match.start()
+            
+            # Find method end
+            brace_count = 0
+            method_end = start_pos
+            for i, char in enumerate(code[start_pos:], start_pos):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        method_end = i
+                        break
+            
+            method_code = code[start_pos:method_end]
+            
+            # Check for multiple responsibilities (heuristic: multiple try-catch blocks)
+            try_count = len(re.findall(r"\btry\b", method_code))
+            if try_count > 2:
+                operations.append(RefactoringOperation(
+                    id=f"extract_method_{method_name}",
+                    type=RefactoringType.EXTRACT_METHOD,
+                    description=f"方法 '{method_name}' 包含 {try_count} 个 try-catch 块，考虑将每个职责提取为独立方法",
+                    file_path=file_path,
+                    line_start=code[:start_pos].count('\n') + 1,
+                    impact="medium",
+                    confidence=0.7,
+                ))
+            
+            # Check for long sequential code blocks
+            method_lines = method_code.split('\n')
+            comment_count = sum(1 for line in method_lines if line.strip().startswith('//') or line.strip().startswith('/*'))
+            code_line_count = len(method_lines) - comment_count
+            
+            if code_line_count > 40:
+                # Look for comment markers that suggest logical sections
+                for i, line in enumerate(method_lines):
+                    if '//' in line and any(keyword in line.lower() for keyword in ['步骤', 'step', '阶段', 'phase', '部分', 'part', 'todo']):
+                        operations.append(RefactoringOperation(
+                            id=f"extract_section_{method_name}_{i}",
+                            type=RefactoringType.EXTRACT_METHOD,
+                            description=f"方法 '{method_name}' 中存在逻辑分段标记，考虑将各段提取为独立方法",
+                            file_path=file_path,
+                            line_start=code[:start_pos].count('\n') + 1 + i,
+                            impact="medium",
+                            confidence=0.65,
+                        ))
+                        break
+        
+        return operations
+    
+    def _check_field_injection_java(
+        self,
+        code: str,
+        file_path: Optional[str]
+    ) -> List[RefactoringOperation]:
+        """Check for field injection in Spring classes."""
+        operations = []
+        
+        # Check for @Autowired on fields
+        field_injection_pattern = r"@Autowired\s+(?:private|protected|public)?\s+\w+(?:<[^>]+>)?\s+\w+\s*;"
+        for match in re.finditer(field_injection_pattern, code):
+            line_num = code[:match.start()].count('\n') + 1
+            field_name = match.group(0).split()[-1].rstrip(';')
+            operations.append(RefactoringOperation(
+                id=f"field_injection_{field_name}",
+                type=RefactoringType.MODERNIZE,
+                description=f"使用字段注入 (@Autowired on field)，建议使用构造器注入",
+                file_path=file_path,
+                line_start=line_num,
+                impact="medium",
+                confidence=0.85,
+            ))
+        
+        # Check for @Autowired on setters
+        setter_injection_pattern = r"@Autowired\s+(?:public|protected)?\s+void\s+set\w+\s*\("
+        for match in re.finditer(setter_injection_pattern, code):
+            line_num = code[:match.start()].count('\n') + 1
+            operations.append(RefactoringOperation(
+                id=f"setter_injection_{line_num}",
+                type=RefactoringType.MODERNIZE,
+                description="使用 setter 注入，建议使用构造器注入以保证不变性",
+                file_path=file_path,
+                line_start=line_num,
+                impact="medium",
+                confidence=0.75,
+            ))
+        
+        return operations
+    
+    def _check_god_class_java(
+        self,
+        code: str,
+        file_path: Optional[str]
+    ) -> List[RefactoringOperation]:
+        """Check for God Class anti-pattern."""
+        operations = []
+        
+        # Count different types of members
+        field_count = len(re.findall(r"(?:private|protected|public)\s+(?:static\s+)?(?:final\s+)?\w+(?:<[^>]+>)?\s+\w+\s*[=;]", code))
+        method_count = len(re.findall(r"(?:public|private|protected)\s+(?:static\s+)?\w+\s+\w+\s*\(", code))
+        
+        # Find class names
+        class_pattern = r"(?:public|private|protected)?\s*(?:abstract|final)?\s*class\s+(\w+)"
+        class_matches = list(re.finditer(class_pattern, code))
+        
+        for match in class_matches:
+            class_name = match.group(1)
+            
+            # Check for too many fields (data class)
+            if field_count > 10:
+                operations.append(RefactoringOperation(
+                    id=f"data_class_{class_name}",
+                    type=RefactoringType.EXTRACT_CLASS,
+                    description=f"类 '{class_name}' 有 {field_count} 个字段，考虑使用 Builder 模式或拆分为多个类",
+                    file_path=file_path,
+                    line_start=code[:match.start()].count('\n') + 1,
+                    impact="medium",
+                    confidence=0.65,
+                ))
+            
+            # Check for mixed abstraction levels
+            public_methods = len(re.findall(r"public\s+(?:static\s+)?\w+\s+\w+\s*\(", code))
+            private_methods = len(re.findall(r"private\s+(?:static\s+)?\w+\s+\w+\s*\(", code))
+            
+            if public_methods > 0 and private_methods > 5 and (private_methods / max(1, public_methods)) > 3:
+                operations.append(RefactoringOperation(
+                    id=f"abstraction_mismatch_{class_name}",
+                    type=RefactoringType.EXTRACT_CLASS,
+                    description=f"类 '{class_name}' 私有方法与公共方法比例失衡，可能承担了过多内部职责",
+                    file_path=file_path,
+                    line_start=code[:match.start()].count('\n') + 1,
+                    impact="medium",
                     confidence=0.6,
                 ))
         

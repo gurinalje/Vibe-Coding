@@ -294,27 +294,57 @@ class CodeAnalyzer:
         return info
     
     def _extract_java_info(self, code: str) -> Dict[str, Any]:
-        """Extract information from Java code."""
+        """Extract information from Java code with enhanced parsing."""
         info = {
             "classes": [],
             "methods": [],
             "imports": [],
+            "annotations": [],
+            "fields": [],
+            "interfaces": [],
+            "inner_classes": [],
         }
         
-        # Extract classes
-        class_pattern = r"(?:public|private|protected)?\s*(?:abstract|final)?\s*class\s+(\w+)"
+        # Extract classes (including inner classes)
+        class_pattern = r"(?:public|private|protected)?\s*(?:static\s+)?(?:abstract|final)?\s*class\s+(\w+)(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?"
         for match in re.finditer(class_pattern, code):
             info["classes"].append(match.group(1))
         
-        # Extract methods
-        method_pattern = r"(?:public|private|protected)\s+(?:static)?\s+\w+\s+(\w+)\s*\("
+        # Extract interfaces
+        interface_pattern = r"(?:public|private|protected)?\s*interface\s+(\w+)(?:\s+extends\s+[\w,\s]+)?"
+        for match in re.finditer(interface_pattern, code):
+            info["interfaces"].append(match.group(1))
+        
+        # Extract methods (enhanced with return types and parameters)
+        method_pattern = r"(?:public|private|protected)\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?(\w+(?:<[^>]+>)?)\s+(\w+)\s*\(([^)]*)\)"
         for match in re.finditer(method_pattern, code):
-            info["methods"].append(match.group(1))
+            return_type = match.group(1)
+            method_name = match.group(2)
+            params = match.group(3)
+            info["methods"].append({
+                "name": method_name,
+                "return_type": return_type,
+                "parameters": params,
+                "parameter_count": len([p for p in params.split(',') if p.strip()]) if params.strip() else 0,
+            })
         
         # Extract imports
-        import_pattern = r"import\s+([\w.]+)"
+        import_pattern = r"import\s+(?:static\s+)?([\w.*]+)"
         for match in re.finditer(import_pattern, code):
             info["imports"].append(match.group(1))
+        
+        # Extract annotations
+        annotation_pattern = r"@(\w+)(?:\([^)]*\))?"
+        for match in re.finditer(annotation_pattern, code):
+            info["annotations"].append(match.group(1))
+        
+        # Extract fields
+        field_pattern = r"(?:private|protected|public)\s+(?:static\s+)?(?:final\s+)?(\w+(?:<[^>]+>)?)\s+(\w+)\s*(?:;|=)"
+        for match in re.finditer(field_pattern, code):
+            info["fields"].append({
+                "type": match.group(1),
+                "name": match.group(2),
+            })
         
         return info
     
@@ -420,28 +450,81 @@ class CodeAnalyzer:
         )
     
     def _calculate_java_metrics(self, code: str) -> CodeMetrics:
-        """Calculate metrics for Java code."""
+        """Calculate metrics for Java code with enhanced accuracy."""
         lines = code.split("\n")
         
         # Basic line counts
         lines_of_code = len(lines)
         blank_lines = sum(1 for line in lines if not line.strip())
-        comment_lines = sum(1 for line in lines if line.strip().startswith("//") or line.strip().startswith("/*"))
+        comment_lines = sum(1 for line in lines if line.strip().startswith("//") or line.strip().startswith("/*") or line.strip().startswith("*"))
         code_lines = lines_of_code - blank_lines - comment_lines
         
+        # Extract Java info for detailed analysis
+        java_info = self._extract_java_info(code)
+        
         # Function and class counts
-        functions = len(re.findall(r"(?:public|private|protected)\s+(?:static)?\s+\w+\s+\w+\s*\(", code))
-        classes = len(re.findall(r"(?:public|private|protected)?\s*(?:abstract|final)?\s*class\s+\w+", code))
+        functions = len(java_info["methods"])
+        classes = len(java_info["classes"])
+        
+        # Calculate function lengths
+        function_lengths = []
+        method_pattern = r"(?:public|private|protected)\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?\w+(?:<[^>]+>)?\s+\w+\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{"
+        
+        for match in re.finditer(method_pattern, code):
+            start_pos = match.start()
+            # Find method end by tracking braces
+            brace_count = 0
+            method_end = start_pos
+            for i, char in enumerate(code[start_pos:], start_pos):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        method_end = i
+                        break
+            
+            method_code = code[start_pos:method_end]
+            method_length = method_code.count('\n') + 1
+            function_lengths.append(method_length)
+        
+        # Calculate class lengths
+        class_lengths = []
+        class_pattern = r"(?:public|private|protected)?\s*(?:static\s+)?(?:abstract|final)?\s*class\s+\w+(?:\s+extends\s+\w+)?(?:\s+implements\s+[\w,\s]+)?\s*\{"
+        
+        for match in re.finditer(class_pattern, code):
+            start_pos = match.start()
+            # Find class end
+            brace_count = 0
+            class_end = start_pos
+            for i, char in enumerate(code[start_pos:], start_pos):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        class_end = i
+                        break
+            
+            class_code = code[start_pos:class_end]
+            class_length = class_code.count('\n') + 1
+            class_lengths.append(class_length)
+        
+        # Calculate averages
+        avg_function_length = sum(function_lengths) / max(1, len(function_lengths))
+        max_function_length = max(function_lengths) if function_lengths else 0
+        avg_class_length = sum(class_lengths) / max(1, len(class_lengths))
+        max_class_length = max(class_lengths) if class_lengths else 0
         
         # Import count
-        imports = len(re.findall(r"^import\s+", code, re.MULTILINE))
+        imports = len(java_info["imports"])
         
         # Calculate cyclomatic complexity
         cyclomatic_complexity = self._calculate_cyclomatic_complexity(code, "java")
         
         # Calculate maintainability index
         maintainability_index = self._calculate_maintainability_index(
-            code_lines, cyclomatic_complexity, 20  # Assume average function length
+            code_lines, cyclomatic_complexity, avg_function_length
         )
         
         # Calculate Halstead volume (simplified)
@@ -455,10 +538,10 @@ class CodeAnalyzer:
             functions=functions,
             classes=classes,
             imports=imports,
-            avg_function_length=20.0,  # Simplified
-            max_function_length=0,
-            avg_class_length=0.0,
-            max_class_length=0,
+            avg_function_length=avg_function_length,
+            max_function_length=max_function_length,
+            avg_class_length=avg_class_length,
+            max_class_length=max_class_length,
             cyclomatic_complexity=cyclomatic_complexity,
             maintainability_index=maintainability_index,
             halstead_volume=halstead_volume,
@@ -510,47 +593,67 @@ class CodeAnalyzer:
         )
     
     def _calculate_cyclomatic_complexity(self, code: str, language: str) -> int:
-        """Calculate cyclomatic complexity."""
-        complexity = 1
+        """Calculate cyclomatic complexity with enhanced accuracy."""
+        complexity = 1  # Base complexity
         
         if language == "python":
             # Count control structures
             patterns = [
-                r"\bif\b",
-                r"\belif\b",
-                r"\bfor\b",
-                r"\bwhile\b",
-                r"\band\b",
-                r"\bor\b",
-                r"\bexcept\b",
+                (r"\bif\b", 1),
+                (r"\belif\b", 1),
+                (r"\bfor\b", 1),
+                (r"\bwhile\b", 1),
+                (r"\band\b", 1),
+                (r"\bor\b", 1),
+                (r"\bexcept\b", 1),
+                (r"\btry\b", 0),  # try itself doesn't add complexity
+                (r"\byield\b", 1),
+                (r"\bassert\b", 1),
+                (r"\bcomprehension\b", 1),  # List/dict/set comprehension
             ]
         elif language == "java":
             patterns = [
-                r"\bif\b",
-                r"\belse\s+if\b",
-                r"\bfor\b",
-                r"\bwhile\b",
-                r"\bcase\b",
-                r"\bcatch\b",
-                r"\&\&",
-                r"\|\|",
+                (r"\bif\b", 1),
+                (r"\belse\s+if\b", 1),
+                (r"\belse\b", 0),  # else itself doesn't add complexity
+                (r"\bfor\b", 1),
+                (r"\bwhile\b", 1),
+                (r"\bdo\b", 1),
+                (r"\bswitch\b", 1),
+                (r"\bcase\b", 1),
+                (r"\bcatch\b", 1),
+                (r"\b&&\b", 1),
+                (r"\b\|\|\b", 1),
+                (r"\b\?\b", 1),  # Ternary operator
+                (r"\bcatch\s*\(", 1),
+                (r"\bfinally\b", 0),
+                (r"\bthrow\b", 1),
+                (r"\btry\b", 0),
             ]
         elif language == "javascript":
             patterns = [
-                r"\bif\b",
-                r"\belse\s+if\b",
-                r"\bfor\b",
-                r"\bwhile\b",
-                r"\bcase\b",
-                r"\bcatch\b",
-                r"\&\&",
-                r"\|\|",
+                (r"\bif\b", 1),
+                (r"\belse\s+if\b", 1),
+                (r"\belse\b", 0),
+                (r"\bfor\b", 1),
+                (r"\bwhile\b", 1),
+                (r"\bdo\b", 1),
+                (r"\bswitch\b", 1),
+                (r"\bcase\b", 1),
+                (r"\bcatch\b", 1),
+                (r"\b&&\b", 1),
+                (r"\b\|\|\b", 1),
+                (r"\b\?\b", 1),  # Ternary operator
+                (r"\?\.", 1),  # Optional chaining
+                (r"&&=", 1),
+                (r"\|\|=", 1),
             ]
         else:
             patterns = []
         
-        for pattern in patterns:
-            complexity += len(re.findall(pattern, code))
+        for pattern, weight in patterns:
+            matches = re.findall(pattern, code)
+            complexity += len(matches) * weight
         
         return complexity
     
@@ -682,7 +785,7 @@ class CodeAnalyzer:
         return issues
     
     def _check_java_issues(self, code: str) -> List[CodeIssue]:
-        """Check for issues in Java code."""
+        """Check for issues in Java code with enhanced detection."""
         issues = []
         
         # Check for System.out
@@ -692,7 +795,7 @@ class CodeAnalyzer:
                 severity="warning",
                 category="best_practice",
                 message="使用 System.out.print",
-                suggestion="使用日志框架替代 System.out",
+                suggestion="使用日志框架（如 SLF4J/Log4j）替代 System.out",
             ))
         
         # Check for generic exception catch
@@ -702,7 +805,7 @@ class CodeAnalyzer:
                 severity="warning",
                 category="best_practice",
                 message="捕获通用 Exception",
-                suggestion="捕获具体的异常类型",
+                suggestion="捕获具体的异常类型，避免吞没异常",
             ))
         
         # Check for magic numbers
@@ -715,6 +818,120 @@ class CodeAnalyzer:
                 message="存在魔法数字",
                 suggestion="将魔法数字定义为命名常量",
             ))
+        
+        # Check for empty catch blocks
+        empty_catch_pattern = r"catch\s*\([^)]+\)\s*\{\s*\}"
+        if re.search(empty_catch_pattern, code, re.DOTALL):
+            issues.append(CodeIssue(
+                id="empty_catch",
+                severity="error",
+                category="error_handling",
+                message="存在空的 catch 块",
+                suggestion="至少记录异常信息，或重新抛出异常",
+            ))
+        
+        # Check for deep nesting
+        lines = code.split('\n')
+        max_nesting = 0
+        current_nesting = 0
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('{'):
+                current_nesting += 1
+                max_nesting = max(max_nesting, current_nesting)
+            elif stripped.startswith('}'):
+                current_nesting = max(0, current_nesting - 1)
+        
+        if max_nesting > 4:
+            issues.append(CodeIssue(
+                id="deep_nesting",
+                severity="warning",
+                category="readability",
+                message=f"代码嵌套深度过大 ({max_nesting} 层)",
+                suggestion="使用提前返回（Guard Clause）或提取方法来减少嵌套",
+            ))
+        
+        # Check for field injection (Spring)
+        if re.search(r"@Autowired\s+(?:private|protected)?\s+\w+\s+\w+;", code):
+            issues.append(CodeIssue(
+                id="field_injection",
+                severity="warning",
+                category="best_practice",
+                message="使用字段注入 (@Autowired on field)",
+                suggestion="使用构造器注入，便于测试和保证不变性",
+            ))
+        
+        # Check for missing @Override
+        if re.search(r"public\s+\w+\s+(?:toString|equals|hashCode|clone)\s*\(", code):
+            if not re.search(r"@Override\s+public\s+\w+\s+(?:toString|equals|hashCode|clone)", code):
+                issues.append(CodeIssue(
+                    id="missing_override",
+                    severity="info",
+                    category="best_practice",
+                    message="重写方法缺少 @Override 注解",
+                    suggestion="添加 @Override 注解提高代码可读性",
+                ))
+        
+        # Check for raw types
+        raw_type_pattern = r"(?:List|Map|Set|ArrayList|HashMap|HashSet|Iterator)\s+\w+\s*[=;]"
+        if re.search(raw_type_pattern, code):
+            issues.append(CodeIssue(
+                id="raw_types",
+                severity="warning",
+                category="modern_practice",
+                message="使用原始类型（Raw Types）",
+                suggestion="使用泛型类型，如 List<String> 替代 List",
+            ))
+        
+        # Check for mutable static fields
+        if re.search(r"static\s+(?:private|protected|public)?\s+(?!final\s+)\w+(?:<[^>]+>)?\s+\w+\s*[=;]", code):
+            issues.append(CodeIssue(
+                id="mutable_static",
+                severity="warning",
+                category="design",
+                message="存在可变的静态字段",
+                suggestion="避免可变静态字段，或使用不可变对象",
+            ))
+        
+        # Check for long methods
+        java_info = self._extract_java_info(code)
+        for method in java_info.get("methods", []):
+            if isinstance(method, dict) and method.get("parameter_count", 0) > 5:
+                issues.append(CodeIssue(
+                    id=f"too_many_params_{method['name']}",
+                    severity="warning",
+                    category="design",
+                    message=f"方法 '{method['name']}' 参数过多 ({method['parameter_count']} 个)",
+                    suggestion="使用参数对象（Parameter Object）或 Builder 模式",
+                ))
+        
+        # Check for string concatenation in loops
+        lines = code.split('\n')
+        in_loop = False
+        for i, line in enumerate(lines, 1):
+            stripped = line.strip()
+            if re.match(r'\s*(for|while)\s+', stripped):
+                in_loop = True
+            elif in_loop and ('+=' in stripped or '+' in stripped) and ('"' in stripped or "'" in stripped or 'String' in stripped):
+                issues.append(CodeIssue(
+                    id=f"string_concat_loop_{i}",
+                    severity="warning",
+                    category="performance",
+                    message=f"第 {i} 行在循环中使用字符串拼接",
+                    suggestion="使用 StringBuilder 替代字符串拼接",
+                ))
+                in_loop = False
+        
+        # Check for resource leak (streams not closed with try-with-resources)
+        if re.search(r"new\s+(BufferedReader|InputStream|OutputStream|Connection)", code):
+            if not re.search(r"try\s*\(", code):
+                issues.append(CodeIssue(
+                    id="resource_leak",
+                    severity="warning",
+                    category="resource_management",
+                    message="可能存在资源泄漏",
+                    suggestion="使用 try-with-resources 语句自动关闭资源",
+                ))
         
         return issues
     

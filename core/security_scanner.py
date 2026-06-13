@@ -140,6 +140,8 @@ class SecurityScanner:
                     (r"execute\s*\(\s*['\"].*%s", "Possible SQL injection via string formatting"),
                     (r"execute\s*\(\s*f['\"]", "Possible SQL injection via f-string"),
                     (r"execute\s*\(\s*['\"].*\+", "Possible SQL injection via concatenation"),
+                    (r"\.execute\s*\(\s*\w+\s*\)", "Database query with variable (verify parameterization)"),
+                    (r"execute\s*\(\s*['\"].*\{", "Possible SQL injection via format string"),
                 ],
                 "command_injection": [
                     (r"os\.system\s*\(", "Use of os.system()"),
