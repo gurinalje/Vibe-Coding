@@ -1,50 +1,55 @@
 # Core dependencies
-numpy>=1.21.0
-pandas>=1.3.0
-scipy>=1.7.0
-scikit-learn>=0.24.0
+# 使用兼容版本约束 (~=) 避免不兼容更新
+numpy~=1.24.0
+pandas~=2.0.0
+scipy~=1.10.0
+scikit-learn~=1.3.0
 
 # AST and code analysis
-astunparse>=1.6.3
-tree-sitter>=0.18.0
-astor>=0.8.1
+astunparse~=1.6.3
+tree-sitter~=0.18.0
+astor~=0.8.1
 
 # LLM integration
-openai>=0.27.0
-anthropic>=0.25.0
-transformers>=4.20.0
+openai~=0.27.0
+anthropic~=0.25.0
+transformers~=4.30.0
 
 # Testing and evaluation
-pytest>=7.0.0
-pytest-cov>=4.0.0
-pytest-asyncio>=0.21.0
+pytest~=7.4.0
+pytest-cov~=4.1.0
+pytest-asyncio~=0.21.0
 
 # Monitoring and logging
-psutil>=5.8.0
-prometheus-client>=0.14.0
+psutil~=5.9.0
+prometheus-client~=0.17.0
 
 # Configuration
-pydantic>=2.0.0
-python-dotenv>=1.0.0
+pydantic~=2.0.0
+python-dotenv~=1.0.0
 
 # Git integration
-gitpython>=3.1.0
+gitpython~=3.1.0
 
 # Code quality
-black>=22.0.0
-flake8>=5.0.0
-mypy>=0.971
+black~=23.0.0
+flake8~=6.0.0
+mypy~=1.5.0
 
 # Security scanning
-bandit>=1.7.0
-safety>=2.2.0
+bandit~=1.7.0
+safety~=2.3.0
 
 # Performance analysis
-memory-profiler>=0.60.0
-line-profiler>=4.0.0
+memory-profiler~=0.61.0
+line-profiler~=4.1.0
 
 # Utilities
-rich>=12.0.0
-click>=8.0.0
-tabulate>=0.9.0
-pyyaml>=6.0
+rich~=13.0.0
+click~=8.1.0
+tabulate~=0.9.0
+pyyaml~=6.0
+
+# 注释说明：
+# ~= 表示兼容版本约束，例如 ~=1.24.0 等价于 >=1.24.0, <1.25.0
+# 这样可以避免主版本更新导致的不兼容问题

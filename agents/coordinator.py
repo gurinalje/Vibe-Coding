@@ -163,6 +163,16 @@ class AgentCoordinator:
             await agent.shutdown()
         logger.info("All agents shutdown")
     
+    async def __aenter__(self):
+        """Async context manager entry."""
+        await self.initialize()
+        return self
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Async context manager exit."""
+        await self.shutdown()
+        return False
+    
     def _generate_task_id(self) -> str:
         """Generate a unique task ID."""
         self.task_counter += 1
