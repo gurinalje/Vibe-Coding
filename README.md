@@ -1,5 +1,11 @@
 # AI Agent 基准项目
 
+<div align="center">
+
+**[English](README_EN.md) | [中文](README.md)**
+
+</div>
+
 ## 多 Agent 协同代码审查和重构系统
 
 这是一个用于评估 AI 代码审查能力的多 Agent 协同系统，包含代码审查、重构建议、安全扫描和性能分析等功能。

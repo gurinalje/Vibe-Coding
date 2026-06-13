@@ -1,5 +1,11 @@
 # AI Agent Benchmark - Multi-Agent Collaborative Code Review System
 
+<div align="center">
+
+**[English](README_EN.md) | [中文](README.md)**
+
+</div>
+
 **Last Updated:** 2026-06-13
 
 ---
