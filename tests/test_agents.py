@@ -223,9 +223,9 @@ def get_user_input():
             "language": "python"
         })
         
-        assert "criticisms" in result
+        assert "evaluations" in result
         assert "score" in result
-        assert isinstance(result["criticisms"], list)
+        assert isinstance(result["evaluations"], list)
 
 
 class TestAgentCoordinator:
