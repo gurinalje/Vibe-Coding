@@ -218,7 +218,8 @@ class AgentCoordinator:
             task.assigned_agent = "reviewer"
             
             # Run review
-            result = await self.agents["reviewer"].run_task(task.data)
+            raw_result = await self.agents["reviewer"].run_task(task.data)
+            result = raw_result.get("result", raw_result)
             
             task.status = TaskStatus.COMPLETED
             task.result = result
@@ -280,7 +281,8 @@ class AgentCoordinator:
             task.assigned_agent = "developer"
             
             # Run refactoring
-            result = await self.agents["developer"].run_task(task.data)
+            raw_result = await self.agents["developer"].run_task(task.data)
+            result = raw_result.get("result", raw_result)
             
             task.status = TaskStatus.COMPLETED
             task.result = result
@@ -342,7 +344,8 @@ class AgentCoordinator:
             task.assigned_agent = "critic"
             
             # Run criticism
-            result = await self.agents["critic"].run_task(task.data)
+            raw_result = await self.agents["critic"].run_task(task.data)
+            result = raw_result.get("result", raw_result)
             
             task.status = TaskStatus.COMPLETED
             task.result = result

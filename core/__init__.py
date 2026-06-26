@@ -18,6 +18,10 @@ from .python_analyzer import PythonAnalyzer
 from .java_analyzer import JavaAnalyzer
 from .javascript_analyzer import JavaScriptAnalyzer
 
+# Import new modules
+from .auto_fixer import AutoFixer, Fix, FixResult
+from .llm_analyzer import LLMAnalyzer, LLMAnalysisResult
+
 __all__ = [
     "CodeAnalyzer",
     "CodeAnalyzerV2",
@@ -32,4 +36,9 @@ __all__ = [
     "PythonAnalyzer",
     "JavaAnalyzer",
     "JavaScriptAnalyzer",
+    "AutoFixer",
+    "Fix",
+    "FixResult",
+    "LLMAnalyzer",
+    "LLMAnalysisResult",
 ]

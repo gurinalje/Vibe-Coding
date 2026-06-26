@@ -200,7 +200,7 @@ class MetricsCalculator:
         if precision + recall == 0:
             f1 = 0.0
         else:
-            f1 = 2 * precision * recall / (precision + recall)
+            f1 = round(2 * precision * recall / (precision + recall), 10)
         
         threshold = self.thresholds.get("f1_score", 0.7)
         

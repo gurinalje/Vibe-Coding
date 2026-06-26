@@ -98,7 +98,13 @@ class JavaScriptAnalyzer:
         code_lines = lines_of_code - blank_lines - comment_lines
         
         # Function and class counts
-        functions = len(re.findall(r'(?:function\s+\w+|(?:const|let|var)\s+\w+\s*=\s*(?:async\s+)?(?:function|\([^)]*\)\s*=>|\w+\s*=>))', code))
+        # Count standalone functions
+        func_pattern = r'(?:function\s+\w+|(?:const|let|var)\s+\w+\s*=\s*(?:async\s+)?(?:function|\([^)]*\)\s*=>|\w+\s*=>))'
+        functions = len(re.findall(func_pattern, code))
+        # Also count class methods (constructor, named methods)
+        method_pattern = r'^\s+(?:async\s+)?(\w+)\s*\([^)]*\)\s*\{'
+        class_methods = len(re.findall(method_pattern, code, re.MULTILINE))
+        functions = functions + class_methods
         classes = len(re.findall(r'class\s+\w+', code))
         
         # Import count

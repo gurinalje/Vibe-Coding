@@ -57,7 +57,10 @@ class CodeAnalyzer:
         Returns:
             Analysis result
         """
-        lang = Language(language)
+        try:
+            lang = Language(language)
+        except ValueError:
+            raise ValueError(f"Unsupported language: {language}")
         analyzer = self.analyzers.get(lang)
         
         if not analyzer:

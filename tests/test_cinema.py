@@ -1054,8 +1054,8 @@ public class TestClass {
         )
         
         # Test text export
-        output_dir = os.path.join(os.path.dirname(__file__), "test_reports")
-        os.makedirs(output_dir, exist_ok=True)
+        import tempfile
+        output_dir = tempfile.mkdtemp(prefix="vibe_test_reports_")
         
         text_path = os.path.join(output_dir, "test_report.txt")
         generator.export_report(report, text_path, ReportFormat.TEXT)
